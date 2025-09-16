@@ -9,13 +9,18 @@ Python virtual environments are a staple in coding with Python. Think of them as
 
 Once you have Python installed, do the following:
 
-1. Pull up the command line.
+1. Pull up the command terminal and navigate to the folder where you'd like to do the analysis.
 2. Clone this Github repo to the machine you will be using to do your analysis using   `git clone`.
-3. Change your directory into the newly-created folder using `cd`.
+3. Change your directory into the newly-created folder.
 3. Create a virtual environment in this folder using  `python -m venv .venv` or `python3 -m venv .venv`. This will create a folder called `.venv` in your working directory that will house your Python packages (modules used for analysis).
 4. Run `source .venv/bin/activate` to activate the virtual environment. This places you in the "container" that is the virtual environment, where you can install packages without chainging your normal workspace. To deactivate your virtual environment, simply run the command `deactivate`.
 5. `pip` is the primary mode of installing packages in Python. Pip can be told to install multiple packages at once using a `requirements.txt` file, which lists packages and their versions. Run `pip install -r requirements.txt` to install required packages.
 
+### DeepCell API Key
+
+To use the DeepCell models, you first need to register for a DeepCell account and receive your API key. This key allows you to download the DeepCell models needed for segmenting and tracking. Visit the [DeepCell website](deepcell.org) and follow the instructions to generate the key.
+
+Once you have the API key, edit your `.bashrc` or `.bash_profile` file in your home directory. At the end of the file, add the line `DEEPCELL_ACCESS_TOKEN=<generated API key>`. Exit and relaunch your command temrinal. This key is good for a set amount of time, so use it promptly.
 
 ## Workflow
 Cells must have a nuclear marker for tracking (DAPI, H2B-HaloTag, H2B-mCherry, etc). In addition, the cells must have fluorescence in another channel. The images should be `.nd2` files, which are Nikon's native file format for images.
@@ -57,8 +62,10 @@ dilation_size = 15
 `registration_type` (`str`: `'local'` or `'global'`):
 - `'local'`: each image is registered independently. This takes longer since the phase cross-correlation must be done for each image individually.
 - `'global'`: all images on the same well plate should be subjected to the same jitter during the timelapse, which can be modeled using a median offset. All images are analyzed for individual offsets, then the median offset for each frame is calculated. This offset is applied to each image.
-- `save_mask` (`bool`): since nuclear segmentation takes the longest, setting this to `true` will save the nuclear masks for running the pipeline again.
-- `treatment_frame` (`int`): The frame at which the treatment is addded to the cells.
+
+`save_mask` (`bool`): since nuclear segmentation takes the longest, setting this to `true` will save the nuclear masks for running the pipeline again.
+
+`treatment_frame` (`int`): The frame at which the treatment is addded to the cells.
 
 ### Live-cell imaging analysis
 
@@ -68,7 +75,7 @@ dilation_size = 15
 3. Images are registered based on local jitter (`local` selection in `metadata.yml` file), or a median offset across all wells (`global` selection in `metadata.yml` file).
 4. Registered images and segmented nuclei are then used to track single cells using `CellTracking` pipeline from [DeepCell Applications](https://github.com/vanvalenlab/deepcell-applications). 
 5. Two files are written to your output folder specified in `output_dir`.
-    1. A `_images.pickle` file organized as follows:
+    1. A `_images.pickle` dictionary organized as follows:
 
         ```
         (dict)
@@ -81,52 +88,45 @@ dilation_size = 15
             |
             |___ cyto_mask (n_frames, rows, cols, 1) int16
         ```
+    2. A `_tracks.pickle` dictionary organized as follows:
+        ```
+        (dict)
+            |
+            |--- 1
+            |     |--- label (int)
+            |     |--- frames (list)
+            |     |--- daughters (list)
+            |     |--- capped (bool)
+            |     |--- frame_div (int or None)
+            |     |--- nuc_intensity (n_frames,) float
+            |     |--- cyto_intensity (n_frames,) float
+            |     |--- cell_intensity (n_frames,) float
+            |     |--- exclude (bool)
+            |     |___ channel_exclude (n_channels,) bool
 
-#### Data analysis
+            ... ...
+            |
+            |___ n_tracks
+                |--- label (int)
+                |--- frames (list)
+                |--- daughters (list)
+                |--- capped (bool)
+                |--- frame_div (int or None)
+                |--- nuc_intensity (n_frames,) float
+                |--- cyto_intensity (n_frames,) float
+                |--- cell_intensity (n_frames,) float
+                |--- exclude (bool)
+                |___ channel_exclude (n_channels,) bool
+        ```
 
-After processing the images, the tracks are then analyzed as below:
+`nuc_intensity` (n_frames,) float: Mean nuclear intensity of every channel for that track
 
-1. `.pickle` files are imported from save directory.
-2. Storage arrays are instantiated as new fields in the `tracks` dictionary:
-    1. `nuc_intensity` (n_frames,) float: Mean nuclear intensity of every channel for that track
-    2. `cyto_intensity` (n_frames,) float: Mean intensity for every channel in the `cyto_mask` region of the image for that track.
-    3. `cell_intensity` (n_frames,) float: Mean intensity for every channel in the combined cyto and nuc regions for that track.
-    4. `exclude` (bool): Whether to exclude cell from further analysis
-3. For each frame, `skimage.measure.regionprops` is used to extract intensities and put them in the newly created fields.
-4. Cells that do not exist in the whole movie are removed.
-5. A GMM is used to separate cells with whole cell expression of the sensor from those not expressing it for each channel. It creates a new field in the `tracks` dict:
-    - `channel_exclude` (n_channels,) bool: Whether the cell is expressing a sensor in each channel based on the GMM predictions.
-6. To save on loading time, the `tracks` dict containing the cytoplasmic intensities and exclusion info is pickled. This dict is different from the `tracks` pickle generated during tracking. The structure of this dict is as follows:
+`cyto_intensity` (n_frames,) float: Mean intensity for every channel in the `cyto_mask` region of the image for that track.
 
-```
-tracks (dict)
-    |
-    |--- 1
-    |     |--- label (int)
-    |     |--- frames (list)
-    |     |--- daughters (list)
-    |     |--- capped (bool)
-    |     |--- frame_div (int or None)
-    |     |--- nuc_intensity (n_frames,) float
-    |     |--- cyto_intensity (n_frames,) float
-    |     |--- cell_intensity (n_frames,) float
-    |     |--- exclude (bool)
-    |     |___ channel_exclude (n_channels,) bool
+`cell_intensity` (n_frames,) float: Mean intensity for every channel in the combined cyto and nuc regions for that track.
 
-    ... ...
-    |
-    |___ n_tracks
-          |--- label (int)
-          |--- frames (list)
-          |--- daughters (list)
-          |--- capped (bool)
-          |--- frame_div (int or None)
-          |--- nuc_intensity (n_frames,) float
-          |--- cyto_intensity (n_frames,) float
-          |--- cell_intensity (n_frames,) float
-          |--- exclude (bool)
-          |___ channel_exclude (n_channels,) bool
-```
+`exclude` (bool): Whether to exclude cell from further analysis.
 
-After signal extraction, cells can be plotted in a variety of ways. This wil depend on your goal for your experiment, so I would suggest creating your own Jupyter noteobok and making your own analysis scripts.
+
+After signal extraction, cell tracks can be plotted in a variety of ways. This wil depend on your goal for your experiment, so I would suggest creating your own Jupyter noteobok and making your own analysis scripts.
 
