@@ -1,0 +1,27 @@
+[expt]
+cell_line = 'Hela wildtype'
+
+# Storage paths
+path_to_live = 'data'
+output_dir = 'data'
+experiment_date = 20250429
+
+# Live cell info
+live_channels = ['EBFP', 'mClover3', 'mOrange2', 'mIRFP703']
+registration_channel = 3
+registration_type = 'local'
+save_mask = true
+treatment_frame = 4
+live_nuc_channel = 3
+num_sites = 1
+nuc_area = 300
+dilation_size = 15
+
+[col.1]
+sensor = 'Erk'
+pattern = 'G5'
+
+
+[row.A]
+treatment = 'EGF'
+concentration = '100 ng/mL'
